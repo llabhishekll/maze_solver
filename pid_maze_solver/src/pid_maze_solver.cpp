@@ -135,6 +135,9 @@ private:
     pid_angle.integrator = 0.0;
     pid_angle.previous_error = 0.0;
 
+    // loop rate 25hz i.e. 0.04 seconds
+    rclcpp::Rate loop_rate(25);
+
     // loop till target done
     while (rclcpp::ok()) {
       float dx = x - px;
@@ -153,10 +156,26 @@ private:
       // calculate total gain
       float output = p + i + d;
 
-      if (std::fabs(error) > 0.017) {
+      // output with limits
+      if (output > pid_distance.output_max) {
+        output = pid_distance.output_max;
+      } else if (output < pid_distance.output_min) {
+        output = pid_distance.output_min;
+      } else {
+        output = output;
+      }
+
+      // log error and gain
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 100,
+                           "%f : %f [%f, %f, %f]", yaw, output, p, i, d);
+
+      if (std::fabs(error_prime) > 0.05) {
         // publish velocity
         message.angular.z = output;
         this->publisher_cmd_vel->publish(message);
+
+        // sleep for the remaining time
+        loop_rate.sleep();
       } else {
         break;
       }
@@ -180,12 +199,15 @@ private:
     pid_distance.integrator = 0.0;
     pid_distance.previous_error = 0.0;
 
+    // loop rate 25hz i.e. 0.04 seconds
+    rclcpp::Rate loop_rate(25);
+
     // loop till target done
     while (rclcpp::ok()) {
       float dx = x - px;
       float dy = y - py;
       float error = std::sqrt(dx * dx + dy * dy);
-      float measurement = std::sqrt(x * x + y * y);
+      float measurement = std::sqrt(px * px + py * py);
 
       // get proportional, integral and differential gain
       float p = pid_distance.get_proportional_gain(error);
@@ -195,10 +217,26 @@ private:
       // calculate total gain
       float output = p + i + d;
 
-      if (std::fabs(error) > 0.08) {
+      // output with limits
+      if (output > pid_angle.output_max) {
+        output = pid_angle.output_max;
+      } else if (output < pid_angle.output_min) {
+        output = pid_angle.output_min;
+      } else {
+        output = output;
+      }
+
+      // log error and gain
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 100,
+                           "%f : %f [%f, %f, %f]", px, output, p, i, d);
+
+      if (std::fabs(error) > 0.05) {
         // publish velocity
         message.linear.x = output;
         this->publisher_cmd_vel->publish(message);
+
+        // sleep for the remaining time
+        loop_rate.sleep();
       } else {
         break;
       }
@@ -261,12 +299,12 @@ int main(int argc, char *argv[]) {
                {0.0, 0.15, 0.58}};
 
   // proportional integral derivative control for distance
-  Control pid_distance{0.8, 0.01, 0.1, -1.5, 1.5, 0.0,
-                       0.0, -1.5, 1.5, 0.0,  0.0, 0.0001};
+  Control pid_distance{1.5, 0.001, 0.4, -1.5, 1.5, 0.0,
+                       0.0, -1.5,  1.5, 0.0,  0.0, 0.04};
 
   // proportional integral derivative control for angle
-  Control pid_angle{0.8, 0.01, 0.1, -1.0, 1.0, 0.0,
-                    0.0, -1.0, 1.0, 0.0,  0.0, 0.0001};
+  Control pid_angle{2.0, 0.001, 0.4, -2.8, 2.8, 0.0,
+                    0.0, -2.8,  2.8, 0.0,  0.0, 0.04};
 
   // initialize executor and node
   rclcpp::executors::MultiThreadedExecutor executor;
